@@ -1,0 +1,25 @@
+{
+  "name": "audio-wave-exaimer",
+  "version": "1.0.0",
+  "description": "CLI to detect pitch accuracy (cent deviation / pitch curve) from a USB mic recording",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "awe": "src/index.js"
+  },
+  "scripts": {
+    "devices": "node src/index.js devices",
+    "record": "node src/index.js record",
+    "play": "node src/index.js play",
+    "analyze": "node src/index.js analyze"
+  },
+  "keywords": [
+    "pitch",
+    "cent",
+    "tuning",
+    "audio",
+    "yin"
+  ],
+  "author": "",
+  "license": "ISC"
+}
