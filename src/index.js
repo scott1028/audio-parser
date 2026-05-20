@@ -5,6 +5,7 @@ import { printDevices } from './devices.js';
 import { record } from './record.js';
 import { play } from './play.js';
 import { analyze } from './analyze.js';
+import { live } from './live.js';
 import { DEFAULT_A4, DEFAULT_TOLERANCE } from './constants.js';
 
 // Minimal flag parser: returns { _: [positionals], <flag>: value|true }.
@@ -35,6 +36,7 @@ Usage:
   awe record [--device plughw:3,0] [--duration <sec>] [--out <file.mp3>]
   awe play <file.mp3>
   awe analyze <file.mp3> [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--no-color]
+  awe live [--device plughw:3,0] [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--window 6] [--no-color]
 `;
 
 async function main() {
@@ -64,6 +66,17 @@ async function main() {
         tolerance: args.tolerance ? Number(args.tolerance) : DEFAULT_TOLERANCE,
         color: !args['no-color'],
         chart: args.chart === 'dots' ? 'dots' : 'line',
+      });
+      break;
+
+    case 'live':
+      await live({
+        device: typeof args.device === 'string' ? args.device : undefined,
+        a4: args.a4 ? Number(args.a4) : DEFAULT_A4,
+        tolerance: args.tolerance ? Number(args.tolerance) : DEFAULT_TOLERANCE,
+        color: !args['no-color'],
+        chart: args.chart === 'dots' ? 'dots' : 'line',
+        window: args.window ? Number(args.window) : undefined,
       });
       break;
 

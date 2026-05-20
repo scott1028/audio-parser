@@ -11,7 +11,8 @@
     "devices": "node src/index.js devices",
     "record": "node src/index.js record",
     "play": "node src/index.js play",
-    "analyze": "node src/index.js analyze"
+    "analyze": "node src/index.js analyze",
+    "live": "node src/index.js live"
   },
   "keywords": [
     "pitch",

@@ -27,9 +27,14 @@ node src/index.js play test.mp3
 
 # Phase 2：分析音準，輸出曲線圖與 cent 統計
 node src/index.js analyze test.mp3 --a4 440 --tolerance 25
+
+# 即時版：邊唱邊看，終端動態更新（畫面與 analyze 相同，Ctrl+C 結束）
+node src/index.js live --device plughw:3,0 --tolerance 25
 ```
 
-也可用 npm scripts：`npm run devices` / `npm run record -- --duration 5` 等。
+也可用 npm scripts：`npm run devices` / `npm run record -- --duration 5` / `npm run live` 等。
+
+`live` 直接串流麥克風 PCM 並沿用 `analyze` 的音高偵測與繪圖（每 ~200ms 重畫最近 `--window` 秒，預設 6s）。
 
 ## 分析輸出
 
@@ -61,4 +66,6 @@ Cent Deviation Summary
 | `--out` | 輸出 mp3 路徑 | `recordings/rec-<時間>.mp3` |
 | `--a4` | A4 參考頻率 (Hz) | 440 |
 | `--tolerance` | 視為「準」的 cent 容許範圍 (±) | 25 |
+| `--chart` | 曲線樣式 `line`（折線）/ `dots`（散點） | line |
+| `--window` | （live）顯示最近幾秒 | 6 |
 | `--no-color` | 關閉終端顏色 | （預設彩色） |

@@ -2,6 +2,16 @@
 
 本檔記錄專案的重要變更。
 
+## [Unreleased]
+
+### 新增 (Added)
+
+- **`awe live` 即時音準監看**（npm script `npm run live`）：直接串流麥克風 PCM，
+  每 ~200ms 清畫面重畫最近 `--window` 秒（預設 6s）。完全沿用 `analyzePitchTrack`
+  與 `renderChart`，畫面與 `awe analyze` 一致。支援 `--device/--a4/--tolerance/--chart/--window/--no-color`。
+- **折線圖**：`analyze`/`live` 新增 `--chart line|dots`（預設 `line`），以 box-drawing
+  字元繪製連續音準曲線（asciichart 風格，子半音解析度）。`dots` 為原本的散點樣式。
+
 ## [1.0.0] - 2026-05-21
 
 走音檢測工具初版，核心指標為**音分誤差 (Cent Deviation)** 與**音準軌跡 (Pitch Curve)**。
