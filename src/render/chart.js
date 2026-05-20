@@ -47,15 +47,19 @@ export function renderChart(track, opts = {}) {
     return;
   }
 
-  printCurve(voiced, track, { tol, color, width: opts.width });
+  const chart = opts.chart ?? 'line';
+  if (chart === 'dots') {
+    printCurve(voiced, track, { tol, color, width: opts.width });
+  } else {
+    printLineCurve(voiced, track, { tol, color, width: opts.width });
+  }
   printStats(voiced, tol, color);
   printNoteTable(voiced, color);
 }
 
 function printCurve(voiced, track, { tol, color, width }) {
   const labelW = 4; // e.g. "A#4 "
-  const termW = process.stdout.columns || 100;
-  const plotW = Math.max(20, Math.min(width ?? termW - labelW - 2, 120));
+  const plotW = plotWidth(width, labelW);
 
   // Y range: span of nearest notes across the recording.
   let lo = Infinity;
@@ -68,28 +72,7 @@ function printCurve(voiced, track, { tol, color, width }) {
   lo -= 1;
   hi += 1;
 
-  // Bucket all frames (by time) into plot columns to keep the time axis
-  // continuous even across silence.
-  const t0 = track[0].t;
-  const tEnd = track[track.length - 1].t;
-  const span = tEnd - t0 || 1;
-
-  // Per-column representative pitch (continuous midi) and tune class.
-  const colMidi = new Array(plotW).fill(null);
-  const colClass = new Array(plotW).fill(null);
-  const buckets = Array.from({ length: plotW }, () => []);
-  for (const v of voiced) {
-    let c = Math.floor(((v.t - t0) / span) * plotW);
-    if (c >= plotW) c = plotW - 1;
-    if (c < 0) c = 0;
-    buckets[c].push(v.midi);
-  }
-  for (let c = 0; c < plotW; c++) {
-    const m = median(buckets[c]);
-    if (m == null) continue;
-    colMidi[c] = m;
-    colClass[c] = tuneClass((m - Math.round(m)) * 100, tol);
-  }
+  const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol);
 
   console.log(`\nPitch Curve  (time ${t0.toFixed(1)}s → ${tEnd.toFixed(1)}s, each column ≈ ${(span / plotW).toFixed(2)}s)`);
   console.log(colorize('Y = note, X = time ──▶', C.dim, color) + '\n');
@@ -113,16 +96,7 @@ function printCurve(voiced, track, { tol, color, width }) {
 
   // X axis with a few time ticks.
   console.log(' '.repeat(labelW) + colorize('└' + '─'.repeat(plotW - 1), C.dim, color));
-  const ticks = 5;
-  let axis = ' '.repeat(labelW);
-  for (let i = 0; i < ticks; i++) {
-    const tsec = t0 + (span * i) / (ticks - 1);
-    const lbl = `${tsec.toFixed(1)}s`;
-    const pos = Math.round((plotW - 1) * (i / (ticks - 1)));
-    while (axis.length - labelW < pos) axis += ' ';
-    axis += lbl;
-  }
-  console.log(colorize(axis, C.dim, color));
+  printTimeAxis(t0, span, plotW, labelW, color);
 
   // Legend.
   console.log(
@@ -133,6 +107,132 @@ function printCurve(voiced, track, { tol, color, width }) {
       '  ' +
       colorize(`${SYMBOL.flat} flat (<-${tol}¢)`, COLOR.flat, color)
   );
+}
+
+// Connected line chart (asciichart style) of the continuous pitch contour.
+function printLineCurve(voiced, track, { tol, color, width }) {
+  const labelW = 4; // e.g. "A#4"
+  const plotW = plotWidth(width, labelW);
+  const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol);
+
+  // Continuous MIDI range (sub-semitone), padded so the line isn't on the edge.
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (const m of colMidi) {
+    if (m == null) continue;
+    if (m < minV) minV = m;
+    if (m > maxV) maxV = m;
+  }
+  minV -= 0.5;
+  maxV += 0.5;
+  if (maxV - minV < 1) {
+    maxV += 0.5;
+    minV -= 0.5;
+  }
+  const range = maxV - minV;
+  // ~2 rows per semitone for a smooth curve, clamped to a sane height.
+  const rows = Math.min(24, Math.max(8, Math.round(range * 2) + 1));
+  const rowOf = (v) => Math.round(((maxV - v) / range) * (rows - 1)); // 0 = top
+
+  const grid = Array.from({ length: rows }, () => new Array(plotW).fill(null));
+  const put = (r, c, ch, cls) => {
+    grid[r][c] = colorize(ch, COLOR[cls], color);
+  };
+
+  // Draw connectors between consecutive voiced columns.
+  for (let c = 0; c < plotW - 1; c++) {
+    const v0 = colMidi[c];
+    const v1 = colMidi[c + 1];
+    if (v0 == null || v1 == null) continue;
+    const y0 = rowOf(v0);
+    const y1 = rowOf(v1);
+    const cls = colClass[c];
+    if (y0 === y1) {
+      put(y0, c, '─', cls);
+    } else {
+      put(y1, c, y0 > y1 ? '╭' : '╰', cls);
+      put(y0, c, y0 > y1 ? '╯' : '╮', cls);
+      const lo = Math.min(y0, y1);
+      const hi = Math.max(y0, y1);
+      for (let y = lo + 1; y < hi; y++) put(y, c, '│', cls);
+    }
+  }
+  // Mark isolated voiced columns (gaps / last column) so they stay visible.
+  for (let c = 0; c < plotW; c++) {
+    if (colMidi[c] == null) continue;
+    const r = rowOf(colMidi[c]);
+    if (grid[r][c] == null) put(r, c, SYMBOL[colClass[c]], colClass[c]);
+  }
+
+  console.log(`\nPitch Curve (line)  time ${t0.toFixed(1)}s → ${tEnd.toFixed(1)}s`);
+  console.log(colorize('Y = pitch, X = time ──▶', C.dim, color) + '\n');
+
+  let lastNote = null;
+  for (let r = 0; r < rows; r++) {
+    const v = maxV - (r / (rows - 1)) * range;
+    const note = midiToName(Math.round(v));
+    const label = note !== lastNote ? note.padStart(labelW) : ' '.repeat(labelW);
+    lastNote = note;
+    let line = '';
+    for (let c = 0; c < plotW; c++) line += grid[r][c] != null ? grid[r][c] : ' ';
+    console.log(colorize(label, C.dim, color) + colorize('┤', C.dim, color) + line);
+  }
+  console.log(' '.repeat(labelW) + colorize('└' + '─'.repeat(plotW), C.dim, color));
+  printTimeAxis(t0, span, plotW, labelW + 1, color);
+
+  console.log(
+    '\nLegend: ' +
+      colorize(`─ on`, COLOR.on, color) +
+      '  ' +
+      colorize(`─ sharp (>+${tol}¢)`, COLOR.sharp, color) +
+      '  ' +
+      colorize(`─ flat (<-${tol}¢)`, COLOR.flat, color)
+  );
+}
+
+// Plot width in columns, leaving room for the left axis labels.
+function plotWidth(width, labelW) {
+  const termW = process.stdout.columns || 100;
+  return Math.max(20, Math.min(width ?? termW - labelW - 2, 120));
+}
+
+// Bucket voiced frames into `plotW` time columns.
+// Returns { colMidi, colClass, t0, tEnd, span }; gaps are null.
+function buildColumns(voiced, track, plotW, tol) {
+  const t0 = track[0].t;
+  const tEnd = track[track.length - 1].t;
+  const span = tEnd - t0 || 1;
+
+  const buckets = Array.from({ length: plotW }, () => []);
+  for (const v of voiced) {
+    let c = Math.floor(((v.t - t0) / span) * plotW);
+    if (c >= plotW) c = plotW - 1;
+    if (c < 0) c = 0;
+    buckets[c].push(v.midi);
+  }
+
+  const colMidi = new Array(plotW).fill(null);
+  const colClass = new Array(plotW).fill(null);
+  for (let c = 0; c < plotW; c++) {
+    const m = median(buckets[c]);
+    if (m == null) continue;
+    colMidi[c] = m;
+    colClass[c] = tuneClass((m - Math.round(m)) * 100, tol);
+  }
+  return { colMidi, colClass, t0, tEnd, span };
+}
+
+function printTimeAxis(t0, span, plotW, leftPad, color) {
+  const ticks = 5;
+  let axis = ' '.repeat(leftPad);
+  for (let i = 0; i < ticks; i++) {
+    const tsec = t0 + (span * i) / (ticks - 1);
+    const lbl = `${tsec.toFixed(1)}s`;
+    const pos = Math.round((plotW - 1) * (i / (ticks - 1)));
+    while (axis.length - leftPad < pos) axis += ' ';
+    axis += lbl;
+  }
+  console.log(colorize(axis, C.dim, color));
 }
 
 function printStats(voiced, tol, color) {

@@ -34,7 +34,7 @@ Usage:
   awe devices
   awe record [--device plughw:3,0] [--duration <sec>] [--out <file.mp3>]
   awe play <file.mp3>
-  awe analyze <file.mp3> [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--no-color]
+  awe analyze <file.mp3> [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--no-color]
 `;
 
 async function main() {
@@ -63,6 +63,7 @@ async function main() {
         a4: args.a4 ? Number(args.a4) : DEFAULT_A4,
         tolerance: args.tolerance ? Number(args.tolerance) : DEFAULT_TOLERANCE,
         color: !args['no-color'],
+        chart: args.chart === 'dots' ? 'dots' : 'line',
       });
       break;
 

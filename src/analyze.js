@@ -20,5 +20,6 @@ export async function analyze(file, opts = {}) {
     a4: opts.a4 ?? DEFAULT_A4,
     tolerance: opts.tolerance ?? DEFAULT_TOLERANCE,
     color: opts.color ?? true,
+    chart: opts.chart ?? 'line',
   });
 }
