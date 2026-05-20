@@ -67,6 +67,17 @@ function rms(frame) {
   return Math.sqrt(sum / frame.length);
 }
 
+// Build analyzePitchTrack options from CLI-style opts, keeping only the keys
+// that were actually provided (so defaults in analyzePitchTrack still apply).
+export function detectOptions(opts = {}) {
+  const o = {};
+  if (opts.threshold != null) o.threshold = opts.threshold;
+  if (opts.rms != null) o.rmsSilence = opts.rms;
+  if (opts.minHz != null) o.minHz = opts.minHz;
+  if (opts.maxHz != null) o.maxHz = opts.maxHz;
+  return o;
+}
+
 // Slice the signal into overlapping frames and detect pitch per frame.
 // Returns [{ t (seconds), hz (number|null) }, ...].
 export function analyzePitchTrack(samples, sampleRate, opts = {}) {

@@ -3,7 +3,7 @@
 // output is identical to `awe analyze`.
 
 import { spawn } from 'node:child_process';
-import { analyzePitchTrack } from './pitch/yin.js';
+import { analyzePitchTrack, detectOptions } from './pitch/yin.js';
 import { renderChart } from './render/chart.js';
 import { pickDefaultDevice } from './devices.js';
 import { parsePitchBound } from './pitch/cents.js';
@@ -34,6 +34,8 @@ export function live(opts = {}) {
   const refreshMs = opts.refresh ?? 200; // redraw cadence
   // Coarser hop than file analysis keeps each redraw cheap enough for live.
   const hopSize = Math.max(HOP_SIZE, 1024);
+  // YIN tuning (threshold/rms/min-hz/max-hz) plus the live hop.
+  const detect = { hopSize, ...detectOptions(opts) };
 
   const maxBytes = Math.floor(windowSec * ANALYZE_SAMPLE_RATE) * 4;
   let pcm = Buffer.alloc(0);
@@ -73,7 +75,7 @@ export function live(opts = {}) {
       const n = pcm.length >> 2; // 4 bytes per float32
       const samples = new Float32Array(n);
       for (let i = 0; i < n; i++) samples[i] = pcm.readFloatLE(i << 2);
-      const track = analyzePitchTrack(samples, ANALYZE_SAMPLE_RATE, { hopSize });
+      const track = analyzePitchTrack(samples, ANALYZE_SAMPLE_RATE, detect);
 
       process.stdout.write('\x1b[H\x1b[2J'); // cursor home + clear screen
       console.log('🎤 LIVE pitch monitor — sing / play into the mic   (Ctrl+C to stop)');

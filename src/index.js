@@ -35,10 +35,12 @@ Usage:
   awe devices
   awe record [--device plughw:3,0] [--duration <sec>] [--out <file.mp3>]
   awe play <file.mp3>
-  awe analyze <file.mp3> [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--no-color]
-  awe live [--device plughw:3,0] [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--window 6] [--min-note C3] [--max-note C6] [--no-color]
+  awe analyze <file.mp3> [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [tuning…] [--no-color]
+  awe live [--device plughw:3,0] [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--window 6] [tuning…] [--no-color]
 
   Fixed Y axis (stable height): --min-note / --max-note accept a note (e.g. C3) or Hz.
+  Detector tuning:  --threshold <0.05-0.30>  --rms <silence floor>  --min-hz <n>  --max-hz <n>
+                    (looser threshold/rms catches quiet/noisy input but adds octave errors)
 `;
 
 async function main() {
@@ -70,6 +72,10 @@ async function main() {
         chart: args.chart === 'dots' ? 'dots' : 'line',
         minNote: typeof args['min-note'] === 'string' ? args['min-note'] : undefined,
         maxNote: typeof args['max-note'] === 'string' ? args['max-note'] : undefined,
+        threshold: args.threshold ? Number(args.threshold) : undefined,
+        rms: args.rms ? Number(args.rms) : undefined,
+        minHz: args['min-hz'] ? Number(args['min-hz']) : undefined,
+        maxHz: args['max-hz'] ? Number(args['max-hz']) : undefined,
       });
       break;
 
@@ -83,6 +89,10 @@ async function main() {
         window: args.window ? Number(args.window) : undefined,
         minNote: typeof args['min-note'] === 'string' ? args['min-note'] : undefined,
         maxNote: typeof args['max-note'] === 'string' ? args['max-note'] : undefined,
+        threshold: args.threshold ? Number(args.threshold) : undefined,
+        rms: args.rms ? Number(args.rms) : undefined,
+        minHz: args['min-hz'] ? Number(args['min-hz']) : undefined,
+        maxHz: args['max-hz'] ? Number(args['max-hz']) : undefined,
       });
       break;
 

@@ -37,6 +37,45 @@ node src/index.js live --device plughw:3,0 --tolerance 25
 `live` 直接串流麥克風 PCM 並沿用 `analyze` 的音高偵測與繪圖（每 ~200ms 重畫最近 `--window` 秒，預設 6s）。
 為避免畫面高度亂跳，`live` 預設用**固定 Y 軸 `C3–C6`** 並隱藏每音平均表；可用 `--min-note` / `--max-note`（音名或 Hz）調整範圍，例如 `--min-note A2 --max-note A5`。
 
+### 情境：用手機/喇叭播放歌曲（best-effort 抓主旋律）
+
+手機喇叭音量小、伴奏為複音，命中率有限。下列旗標把偵測**聚焦在人聲旋律範圍**、放寬門檻與靜音 floor：
+
+```bash
+# 即時監看
+node src/index.js live \
+  --rms 0.002 --threshold 0.2 --min-hz 130 --max-hz 700 \
+  --min-note C3 --max-note F5
+
+# 分析已錄好的檔案
+node src/index.js analyze song.mp3 \
+  --rms 0.002 --threshold 0.2 --min-hz 130 --max-hz 700
+```
+
+各旗標用意：`--rms 0.002` 收得到小聲；`--threshold 0.2` 放寬靈敏度多抓旋律幀；
+`--min-hz 130`(≈C3) 濾掉貝斯/大鼓；`--max-hz 700`(≈F5) 聚焦主唱、濾掉鈸/高泛音；
+`--min-note C3 --max-note F5`（僅 live）把 Y 軸固定到旋律音域。
+
+**男聲版**（基頻較低，主旋律約 A2–A4、高音可到 ~C5，所以音域整個往下移）：
+
+```bash
+# 即時監看
+node src/index.js live \
+  --rms 0.002 --threshold 0.2 --min-hz 90 --max-hz 520 \
+  --min-note E2 --max-note C5
+
+# 分析檔案
+node src/index.js analyze song.mp3 \
+  --rms 0.002 --threshold 0.2 --min-hz 90 --max-hz 520
+```
+
+與通用版差異：`--min-hz 130→90`(≈F#2，收得到男聲低音)、`--max-hz 700→520`(≈C5，砍更多伴奏)、
+Y 軸 `C3–F5 → E2–C5`。微調：貝斯/大鼓干擾多 → `--min-hz` 拉高到 110–130；飆假音被砍 → `--max-hz 600`、`--max-note E5`。
+（「印度歌手/英文歌」對設定不影響；只有男聲音域是關鍵。若是印度古典風的 meend 滑音，曲線連續滑動屬正常，tanpura drone 可能搶偵測，需更窄的 `--min-hz` 避開。）
+
+> ⚠️ 整首歌為**複音**，YIN 無法穩定追音；此組合只是盡量抓最大聲的主旋律，會有八度誤判等雜訊。
+> 想要連續可靠的旋律線，請改成**清唱**（詳見 [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md)）。
+
 ## 分析輸出
 
 ```
@@ -69,4 +108,11 @@ Cent Deviation Summary
 | `--tolerance` | 視為「準」的 cent 容許範圍 (±) | 25 |
 | `--chart` | 曲線樣式 `line`（折線）/ `dots`（散點） | line |
 | `--window` | （live）顯示最近幾秒 | 6 |
+| `--min-note` / `--max-note` | 固定 Y 軸範圍（音名如 `C3` 或 Hz） | live 預設 C3–C6 |
+| `--threshold` | YIN 靈敏度（約 0.05–0.30，越大越敏感） | 0.12 |
+| `--rms` | 靜音門檻（越小越能收小聲） | 0.005 |
+| `--min-hz` / `--max-hz` | 合理基頻範圍，範圍外捨棄 | 65 / 1100 |
 | `--no-color` | 關閉終端顏色 | （預設彩色） |
+
+> 折線圖會自動「補洞」：偵測短暫掉幀（≤2 欄）時以內插連線，讓清唱的小斷點不破圖；較長的空缺仍保留為真實斷點。
+> 放寬 `--threshold` / `--rms` 可多抓小聲或雜訊輸入，但會增加八度誤判等雜訊；對**複音歌曲**仍無法穩定追音（見 `TROUBLESHOOTING.md`）。

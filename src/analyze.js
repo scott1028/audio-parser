@@ -1,7 +1,7 @@
 // Phase 2 orchestration: decode -> YIN pitch track -> render chart + stats.
 
 import { decodeToPcm } from './decode.js';
-import { analyzePitchTrack } from './pitch/yin.js';
+import { analyzePitchTrack, detectOptions } from './pitch/yin.js';
 import { renderChart } from './render/chart.js';
 import { parsePitchBound } from './pitch/cents.js';
 import { ANALYZE_SAMPLE_RATE, DEFAULT_A4, DEFAULT_TOLERANCE } from './constants.js';
@@ -17,7 +17,7 @@ export async function analyze(file, opts = {}) {
   console.log(`Analyzing ${file}  (${durationSec.toFixed(1)}s @ ${sampleRate}Hz, A4=${opts.a4 ?? DEFAULT_A4}Hz)`);
 
   const a4 = opts.a4 ?? DEFAULT_A4;
-  const track = analyzePitchTrack(samples, sampleRate);
+  const track = analyzePitchTrack(samples, sampleRate, detectOptions(opts));
   renderChart(track, {
     a4,
     tolerance: opts.tolerance ?? DEFAULT_TOLERANCE,

@@ -13,6 +13,9 @@
   字元繪製連續音準曲線（asciichart 風格，子半音解析度）。`dots` 為原本的散點樣式。
 - **固定 Y 軸**：`--min-note` / `--max-note`（接受音名如 `C3` 或 Hz）可固定縱軸範圍。
   `cents.js` 新增 `noteToMidi` / `parsePitchBound`。
+- **折線補洞**：折線圖自動以內插連接 ≤2 欄的短暫掉幀（`GAP_BRIDGE`），減少清唱小斷點造成的破圖；較長空缺仍保留為真實斷點。
+- **偵測調參旗標**：`analyze` / `live` 新增 `--threshold` / `--rms` / `--min-hz` / `--max-hz`，
+  穿過至 `analyzePitchTrack`。`yin.js` 新增 `detectOptions()` 供 analyze/live 共用組裝。
 
 ### 變更 (Changed)
 

@@ -32,6 +32,10 @@ function tuneClass(cents, tol) {
 const SYMBOL = { on: '●', sharp: '▲', flat: '▼' }; // ● ▲ ▼
 const COLOR = { on: C.green, sharp: C.red, flat: C.cyan };
 
+// Bridge up to this many consecutive empty columns in the line chart, so
+// brief detection dropouts in a sustained note don't break the line.
+const GAP_BRIDGE = 2;
+
 // track: [{ t, hz }].
 // opts: { a4, tolerance, color, width, chart, yMin, yMax (MIDI), showTable }.
 // Passing yMin+yMax fixes the Y axis (stable height, e.g. for live view).
@@ -175,14 +179,34 @@ function printLineCurve(voiced, track, { tol, color, width, yMin, yMax }) {
     grid[r][c] = colorize(ch, COLOR[cls], color);
   };
 
-  // Draw connectors between consecutive voiced columns.
+  // Bridge short gaps (<= GAP_BRIDGE empty columns) by linear interpolation so
+  // brief dropouts don't break the line; longer gaps stay as real breaks.
+  const fillMidi = colMidi.slice();
+  const fillClass = colClass.slice();
+  let prev = -1;
+  for (let c = 0; c < plotW; c++) {
+    if (colMidi[c] == null) continue;
+    const gap = c - prev;
+    if (prev >= 0 && gap > 1 && gap - 1 <= GAP_BRIDGE) {
+      const v0 = colMidi[prev];
+      const v1 = colMidi[c];
+      for (let k = prev + 1; k < c; k++) {
+        const m = v0 + ((v1 - v0) * (k - prev)) / gap;
+        fillMidi[k] = m;
+        fillClass[k] = tuneClass((m - Math.round(m)) * 100, tol);
+      }
+    }
+    prev = c;
+  }
+
+  // Draw connectors between consecutive (bridged) voiced columns.
   for (let c = 0; c < plotW - 1; c++) {
-    const v0 = colMidi[c];
-    const v1 = colMidi[c + 1];
+    const v0 = fillMidi[c];
+    const v1 = fillMidi[c + 1];
     if (v0 == null || v1 == null) continue;
     const y0 = rowOf(v0);
     const y1 = rowOf(v1);
-    const cls = colClass[c];
+    const cls = fillClass[c];
     if (y0 === y1) {
       put(y0, c, '─', cls);
     } else {
@@ -193,11 +217,11 @@ function printLineCurve(voiced, track, { tol, color, width, yMin, yMax }) {
       for (let y = lo + 1; y < hi; y++) put(y, c, '│', cls);
     }
   }
-  // Mark isolated voiced columns (gaps / last column) so they stay visible.
+  // Mark isolated voiced columns (real gaps / last column) so they stay visible.
   for (let c = 0; c < plotW; c++) {
-    if (colMidi[c] == null) continue;
-    const r = rowOf(colMidi[c]);
-    if (grid[r][c] == null) put(r, c, SYMBOL[colClass[c]], colClass[c]);
+    if (fillMidi[c] == null) continue;
+    const r = rowOf(fillMidi[c]);
+    if (grid[r][c] == null) put(r, c, SYMBOL[fillClass[c]], fillClass[c]);
   }
 
   console.log(`\nPitch Curve (line)  time ${t0.toFixed(1)}s → ${tEnd.toFixed(1)}s`);
