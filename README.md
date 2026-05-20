@@ -35,6 +35,7 @@ node src/index.js live --device plughw:3,0 --tolerance 25
 也可用 npm scripts：`npm run devices` / `npm run record -- --duration 5` / `npm run live` 等。
 
 `live` 直接串流麥克風 PCM 並沿用 `analyze` 的音高偵測與繪圖（每 ~200ms 重畫最近 `--window` 秒，預設 6s）。
+為避免畫面高度亂跳，`live` 預設用**固定 Y 軸 `C3–C6`** 並隱藏每音平均表；可用 `--min-note` / `--max-note`（音名或 Hz）調整範圍，例如 `--min-note A2 --max-note A5`。
 
 ## 分析輸出
 

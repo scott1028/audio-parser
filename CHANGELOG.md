@@ -8,9 +8,16 @@
 
 - **`awe live` 即時音準監看**（npm script `npm run live`）：直接串流麥克風 PCM，
   每 ~200ms 清畫面重畫最近 `--window` 秒（預設 6s）。完全沿用 `analyzePitchTrack`
-  與 `renderChart`，畫面與 `awe analyze` 一致。支援 `--device/--a4/--tolerance/--chart/--window/--no-color`。
+  與 `renderChart`。支援 `--device/--a4/--tolerance/--chart/--window/--min-note/--max-note/--no-color`。
 - **折線圖**：`analyze`/`live` 新增 `--chart line|dots`（預設 `line`），以 box-drawing
   字元繪製連續音準曲線（asciichart 風格，子半音解析度）。`dots` 為原本的散點樣式。
+- **固定 Y 軸**：`--min-note` / `--max-note`（接受音名如 `C3` 或 Hz）可固定縱軸範圍。
+  `cents.js` 新增 `noteToMidi` / `parsePitchBound`。
+
+### 變更 (Changed)
+
+- **live 高度不再亂跳**：預設固定 Y 軸 `C3–C6`、隱藏每音平均表，靜音時仍畫出完整格線
+  與統計（顯示「waiting for sound…」），使每幀高度恆定；列數另受終端高度上限約束以避免溢出。
 
 ## [1.0.0] - 2026-05-21
 

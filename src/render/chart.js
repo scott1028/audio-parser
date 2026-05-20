@@ -32,45 +32,60 @@ function tuneClass(cents, tol) {
 const SYMBOL = { on: '●', sharp: '▲', flat: '▼' }; // ● ▲ ▼
 const COLOR = { on: C.green, sharp: C.red, flat: C.cyan };
 
-// track: [{ t, hz }]. opts: { a4, tolerance, color, width }.
+// track: [{ t, hz }].
+// opts: { a4, tolerance, color, width, chart, yMin, yMax (MIDI), showTable }.
+// Passing yMin+yMax fixes the Y axis (stable height, e.g. for live view).
 export function renderChart(track, opts = {}) {
   const a4 = opts.a4 ?? DEFAULT_A4;
   const tol = opts.tolerance ?? DEFAULT_TOLERANCE;
   const color = opts.color ?? true;
+  const chart = opts.chart ?? 'line';
+  const showTable = opts.showTable ?? true;
+  const yMin = opts.yMin ?? null;
+  const yMax = opts.yMax ?? null;
+  const fixedY = yMin != null && yMax != null;
 
   const voiced = track
     .filter((f) => f.hz != null)
     .map((f) => ({ t: f.t, ...analyzeHz(f.hz, a4) }));
 
-  if (voiced.length === 0) {
+  // Without a fixed axis there's nothing meaningful to draw when silent.
+  if (voiced.length === 0 && !fixedY) {
     console.log('No pitched audio detected (silence or unvoiced only).');
     return;
   }
 
-  const chart = opts.chart ?? 'line';
+  const curveOpts = { tol, color, width: opts.width, yMin, yMax };
   if (chart === 'dots') {
-    printCurve(voiced, track, { tol, color, width: opts.width });
+    printCurve(voiced, track, curveOpts);
   } else {
-    printLineCurve(voiced, track, { tol, color, width: opts.width });
+    printLineCurve(voiced, track, curveOpts);
   }
   printStats(voiced, tol, color);
-  printNoteTable(voiced, color);
+  if (showTable && voiced.length > 0) printNoteTable(voiced, color);
 }
 
-function printCurve(voiced, track, { tol, color, width }) {
+function printCurve(voiced, track, { tol, color, width, yMin, yMax }) {
   const labelW = 4; // e.g. "A#4 "
   const plotW = plotWidth(width, labelW);
 
-  // Y range: span of nearest notes across the recording.
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const v of voiced) {
-    lo = Math.min(lo, v.nearestMidi);
-    hi = Math.max(hi, v.nearestMidi);
+  // Y range: fixed when yMin/yMax given, else span of detected notes.
+  let lo;
+  let hi;
+  if (yMin != null && yMax != null) {
+    lo = Math.round(Math.min(yMin, yMax));
+    hi = Math.round(Math.max(yMin, yMax));
+  } else {
+    lo = Infinity;
+    hi = -Infinity;
+    for (const v of voiced) {
+      lo = Math.min(lo, v.nearestMidi);
+      hi = Math.max(hi, v.nearestMidi);
+    }
+    // Pad one semitone above/below so markers don't sit on the edge.
+    lo -= 1;
+    hi += 1;
   }
-  // Pad one semitone above/below so markers don't sit on the edge.
-  lo -= 1;
-  hi += 1;
 
   const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol);
 
@@ -110,29 +125,50 @@ function printCurve(voiced, track, { tol, color, width }) {
 }
 
 // Connected line chart (asciichart style) of the continuous pitch contour.
-function printLineCurve(voiced, track, { tol, color, width }) {
+function printLineCurve(voiced, track, { tol, color, width, yMin, yMax }) {
   const labelW = 4; // e.g. "A#4"
   const plotW = plotWidth(width, labelW);
   const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol);
 
-  // Continuous MIDI range (sub-semitone), padded so the line isn't on the edge.
-  let minV = Infinity;
-  let maxV = -Infinity;
-  for (const m of colMidi) {
-    if (m == null) continue;
-    if (m < minV) minV = m;
-    if (m > maxV) maxV = m;
-  }
-  minV -= 0.5;
-  maxV += 0.5;
-  if (maxV - minV < 1) {
-    maxV += 0.5;
+  // MIDI range: fixed when yMin/yMax given (stable height), else auto-fit.
+  const fixedY = yMin != null && yMax != null;
+  let minV;
+  let maxV;
+  if (fixedY) {
+    minV = Math.min(yMin, yMax);
+    maxV = Math.max(yMin, yMax);
+  } else {
+    minV = Infinity;
+    maxV = -Infinity;
+    for (const m of colMidi) {
+      if (m == null) continue;
+      if (m < minV) minV = m;
+      if (m > maxV) maxV = m;
+    }
+    if (!Number.isFinite(minV)) {
+      minV = 57; // A3
+      maxV = 69; // A4
+    }
+    // Pad so the line isn't glued to the edge.
     minV -= 0.5;
+    maxV += 0.5;
+    if (maxV - minV < 1) {
+      maxV += 0.5;
+      minV -= 0.5;
+    }
   }
   const range = maxV - minV;
-  // ~2 rows per semitone for a smooth curve, clamped to a sane height.
-  const rows = Math.min(24, Math.max(8, Math.round(range * 2) + 1));
-  const rowOf = (v) => Math.round(((maxV - v) / range) * (rows - 1)); // 0 = top
+  // Auto: ~2 rows/semitone for smoothness. Fixed: ~1 row/semitone, but always
+  // capped to the terminal height so the frame fits and stays a constant size.
+  const maxRowsForTerm = Math.max(8, (process.stdout.rows || 40) - 14);
+  const rows = Math.min(
+    maxRowsForTerm,
+    Math.max(8, Math.round(range * (fixedY ? 1 : 2)) + 1)
+  );
+  const rowOf = (v) => {
+    const r = Math.round(((maxV - v) / range) * (rows - 1)); // 0 = top
+    return r < 0 ? 0 : r > rows - 1 ? rows - 1 : r; // clamp out-of-range to edge
+  };
 
   const grid = Array.from({ length: rows }, () => new Array(plotW).fill(null));
   const put = (r, c, ch, cls) => {
@@ -199,8 +235,8 @@ function plotWidth(width, labelW) {
 // Bucket voiced frames into `plotW` time columns.
 // Returns { colMidi, colClass, t0, tEnd, span }; gaps are null.
 function buildColumns(voiced, track, plotW, tol) {
-  const t0 = track[0].t;
-  const tEnd = track[track.length - 1].t;
+  const t0 = track.length ? track[0].t : 0;
+  const tEnd = track.length ? track[track.length - 1].t : 0;
   const span = tEnd - t0 || 1;
 
   const buckets = Array.from({ length: plotW }, () => []);
@@ -237,6 +273,16 @@ function printTimeAxis(t0, span, plotW, leftPad, color) {
 
 function printStats(voiced, tol, color) {
   const n = voiced.length;
+  if (n === 0) {
+    // Keep the same number of lines so the live frame height stays constant.
+    console.log('\nCent Deviation Summary');
+    console.log('  Voiced frames analyzed : 0');
+    console.log('  Mean absolute deviation: —');
+    console.log(`  In tune (±${tol}¢)        : —`);
+    console.log('  Max sharp / flat       : —');
+    console.log('  Verdict                : ' + colorize('(waiting for sound…)', C.dim, color));
+    return;
+  }
   const absSum = voiced.reduce((s, v) => s + Math.abs(v.cents), 0);
   const onCount = voiced.filter((v) => Math.abs(v.cents) <= tol).length;
   let maxSharp = 0;

@@ -19,6 +19,32 @@ export function midiToName(midi) {
   return `${name}${octave}`;
 }
 
+const SEMITONE_OF = {
+  C: 0, 'C#': 1, DB: 1, D: 2, 'D#': 3, EB: 3, E: 4, F: 5,
+  'F#': 6, GB: 6, G: 7, 'G#': 8, AB: 8, A: 9, 'A#': 10, BB: 10, B: 11,
+};
+
+// Parse a note name like "C3", "A#4", "Bb2" to a MIDI number. Returns null
+// if it doesn't look like a note name.
+export function noteToMidi(name) {
+  const m = String(name).trim().match(/^([A-Ga-g])([#b]?)(-?\d+)$/);
+  if (!m) return null;
+  const key = (m[1] + m[2]).toUpperCase();
+  const semi = SEMITONE_OF[key];
+  if (semi == null) return null;
+  return (Number(m[3]) + 1) * 12 + semi;
+}
+
+// Resolve a Y-axis bound given as a note name ("C3") or a frequency in Hz
+// ("130.8") to a MIDI value. Returns null for empty/invalid input.
+export function parsePitchBound(s, a4 = DEFAULT_A4) {
+  if (s == null || s === '') return null;
+  const note = noteToMidi(s);
+  if (note != null) return note;
+  const hz = Number(s);
+  return Number.isFinite(hz) && hz > 0 ? hzToMidi(hz, a4) : null;
+}
+
 // Full pitch info for a frequency:
 // { hz, midi, nearestMidi, note, cents } where cents in [-50, +50].
 export function analyzeHz(hz, a4 = DEFAULT_A4) {

@@ -6,11 +6,14 @@ import { spawn } from 'node:child_process';
 import { analyzePitchTrack } from './pitch/yin.js';
 import { renderChart } from './render/chart.js';
 import { pickDefaultDevice } from './devices.js';
+import { parsePitchBound } from './pitch/cents.js';
 import {
   ANALYZE_SAMPLE_RATE,
   DEFAULT_A4,
   DEFAULT_TOLERANCE,
   HOP_SIZE,
+  LIVE_Y_MIN_NOTE,
+  LIVE_Y_MAX_NOTE,
 } from './constants.js';
 
 // opts: { device, a4, tolerance, color, chart, window, refresh }
@@ -25,6 +28,9 @@ export function live(opts = {}) {
   const color = opts.color ?? true;
   const chart = opts.chart ?? 'line';
   const windowSec = opts.window ?? 6; // rolling window shown on screen
+  // Fixed Y axis keeps the GUI height constant frame-to-frame.
+  const yMin = parsePitchBound(opts.minNote ?? LIVE_Y_MIN_NOTE, a4);
+  const yMax = parsePitchBound(opts.maxNote ?? LIVE_Y_MAX_NOTE, a4);
   const refreshMs = opts.refresh ?? 200; // redraw cadence
   // Coarser hop than file analysis keeps each redraw cheap enough for live.
   const hopSize = Math.max(HOP_SIZE, 1024);
@@ -72,7 +78,8 @@ export function live(opts = {}) {
       process.stdout.write('\x1b[H\x1b[2J'); // cursor home + clear screen
       console.log('🎤 LIVE pitch monitor — sing / play into the mic   (Ctrl+C to stop)');
       console.log(`device: ${device}   window: ${windowSec}s`);
-      renderChart(track, { a4, tolerance, color, chart });
+      // Fixed Y axis + no per-note table -> constant frame height (no jumping).
+      renderChart(track, { a4, tolerance, color, chart, yMin, yMax, showTable: false });
     };
 
     const timer = setInterval(draw, refreshMs);

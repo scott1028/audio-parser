@@ -42,6 +42,11 @@ export const RMS_SILENCE = 0.005;
 export const MIN_HZ = 65; // ~C2
 export const MAX_HZ = 1100; // ~C#6
 
+// Default fixed Y-axis range for the live view (note names), so the GUI
+// height stays constant instead of rescaling per frame. Covers most singing.
+export const LIVE_Y_MIN_NOTE = 'C3';
+export const LIVE_Y_MAX_NOTE = 'C6';
+
 // Default "in tune" tolerance in cents (±). Cent deviation is measured
 // against the nearest semitone, so it always falls in [-50, +50]; ~25 cents
 // is a reasonable line between "on pitch" and "noticeably sharp/flat".

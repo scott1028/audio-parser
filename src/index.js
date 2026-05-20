@@ -36,7 +36,9 @@ Usage:
   awe record [--device plughw:3,0] [--duration <sec>] [--out <file.mp3>]
   awe play <file.mp3>
   awe analyze <file.mp3> [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--no-color]
-  awe live [--device plughw:3,0] [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--window 6] [--no-color]
+  awe live [--device plughw:3,0] [--a4 ${DEFAULT_A4}] [--tolerance ${DEFAULT_TOLERANCE}] [--chart line|dots] [--window 6] [--min-note C3] [--max-note C6] [--no-color]
+
+  Fixed Y axis (stable height): --min-note / --max-note accept a note (e.g. C3) or Hz.
 `;
 
 async function main() {
@@ -66,6 +68,8 @@ async function main() {
         tolerance: args.tolerance ? Number(args.tolerance) : DEFAULT_TOLERANCE,
         color: !args['no-color'],
         chart: args.chart === 'dots' ? 'dots' : 'line',
+        minNote: typeof args['min-note'] === 'string' ? args['min-note'] : undefined,
+        maxNote: typeof args['max-note'] === 'string' ? args['max-note'] : undefined,
       });
       break;
 
@@ -77,6 +81,8 @@ async function main() {
         color: !args['no-color'],
         chart: args.chart === 'dots' ? 'dots' : 'line',
         window: args.window ? Number(args.window) : undefined,
+        minNote: typeof args['min-note'] === 'string' ? args['min-note'] : undefined,
+        maxNote: typeof args['max-note'] === 'string' ? args['max-note'] : undefined,
       });
       break;
 
