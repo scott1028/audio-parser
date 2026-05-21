@@ -140,7 +140,8 @@ function printCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow }) {
 // Connected line chart (asciichart style) of the continuous pitch contour.
 function printLineCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow, reserveBottom }) {
   const labelW = 4; // e.g. "A#4"
-  const plotW = plotWidth(width, labelW);
+  // Reserve labelW+1 on the right too (┤ + mirrored note label).
+  const plotW = plotWidth(width, labelW, labelW + 1);
   const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol, tWindow);
 
   // MIDI range: fixed when yMin/yMax given (stable height), else auto-fit.
@@ -262,13 +263,22 @@ function printLineCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow,
   for (let r = 0; r < rows; r++) {
     const v = maxV - (r / (rows - 1)) * range;
     const note = midiToName(Math.round(v));
-    const label = note !== lastNote ? note.padStart(labelW) : ' '.repeat(labelW);
+    // Same de-dup decides both sides so left/right labels align row-for-row.
+    const changed = note !== lastNote;
+    const leftLabel = changed ? note.padStart(labelW) : ' '.repeat(labelW);
+    const rightLabel = changed ? note.padEnd(labelW) : ' '.repeat(labelW);
     lastNote = note;
     let line = '';
     for (let c = 0; c < plotW; c++) line += grid[r][c] != null ? grid[r][c] : ' ';
-    console.log(colorize(label, C.dim, color) + colorize('┤', C.dim, color) + line);
+    console.log(
+      colorize(leftLabel, C.dim, color) +
+        colorize('┤', C.dim, color) +
+        line +
+        colorize('┤', C.dim, color) +
+        colorize(rightLabel, C.dim, color)
+    );
   }
-  console.log(' '.repeat(labelW) + colorize('└' + '─'.repeat(plotW), C.dim, color));
+  console.log(' '.repeat(labelW) + colorize('└' + '─'.repeat(plotW) + '┘', C.dim, color));
   printTimeAxis(t0, span, plotW, labelW + 1, color);
 
   console.log(
@@ -283,10 +293,11 @@ function printLineCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow,
   );
 }
 
-// Plot width in columns, leaving room for the left axis labels.
-function plotWidth(width, labelW) {
+// Plot width in columns, leaving room for the left axis labels (and the right
+// mirrored labels when rightReserve > 0) so the full line never wraps.
+function plotWidth(width, labelW, rightReserve = 0) {
   const termW = process.stdout.columns || 100;
-  return Math.max(20, Math.min(width ?? termW - labelW - 2, 120));
+  return Math.max(20, Math.min(width ?? termW - labelW - 2 - rightReserve, 120));
 }
 
 // Bucket voiced frames into `plotW` time columns.
