@@ -1,7 +1,7 @@
 // Render a pitch curve + cent-deviation stats to the terminal.
 
 import { analyzeHz, midiToName } from '../pitch/cents.js';
-import { DEFAULT_A4, DEFAULT_TOLERANCE } from '../constants.js';
+import { DEFAULT_A4, DEFAULT_TOLERANCE, NOTE_NAMES } from '../constants.js';
 
 const C = {
   reset: '\x1b[0m',
@@ -36,15 +36,18 @@ const SYMBOL = { on: '●', sharp: '▲', flat: '▼', gap: '╌' };
 const COLOR = { on: C.green, sharp: C.red, flat: C.cyan, gap: C.gray };
 
 // track: [{ t, hz }].
-// opts: { a4, tolerance, color, width, chart, yMin, yMax (MIDI), tMin, tMax, showTable }.
+// opts: { a4, tolerance, color, width, chart, yMin, yMax (MIDI), tMin, tMax, showTable, showCentsRuler }.
 // Passing yMin+yMax fixes the Y axis (stable height, e.g. for live view).
 // Passing tMin+tMax fixes the X axis to that time window (e.g. live 0..10s).
+// showCentsRuler appends a one-octave (0..1200¢) ruler marking the current note
+// (live only); it reserves extra bottom rows so the frame still fits the screen.
 export function renderChart(track, opts = {}) {
   const a4 = opts.a4 ?? DEFAULT_A4;
   const tol = opts.tolerance ?? DEFAULT_TOLERANCE;
   const color = opts.color ?? true;
   const chart = opts.chart ?? 'line';
   const showTable = opts.showTable ?? true;
+  const showCentsRuler = opts.showCentsRuler ?? false;
   const yMin = opts.yMin ?? null;
   const yMax = opts.yMax ?? null;
   const tWindow =
@@ -61,7 +64,10 @@ export function renderChart(track, opts = {}) {
     return;
   }
 
-  const curveOpts = { tol, color, width: opts.width, yMin, yMax, tWindow };
+  // Reserve more bottom rows when the cents ruler is shown so the live frame
+  // still fits the terminal without scrolling.
+  const reserveBottom = showCentsRuler ? 20 : 14;
+  const curveOpts = { tol, color, width: opts.width, yMin, yMax, tWindow, reserveBottom };
   if (chart === 'dots') {
     printCurve(voiced, track, curveOpts);
   } else {
@@ -69,6 +75,7 @@ export function renderChart(track, opts = {}) {
   }
   printStats(voiced, tol, color);
   if (showTable && voiced.length > 0) printNoteTable(voiced, color);
+  if (showCentsRuler) printCentsRuler(voiced, { color, tol, width: opts.width });
 }
 
 function printCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow }) {
@@ -131,7 +138,7 @@ function printCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow }) {
 }
 
 // Connected line chart (asciichart style) of the continuous pitch contour.
-function printLineCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow }) {
+function printLineCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow, reserveBottom }) {
   const labelW = 4; // e.g. "A#4"
   const plotW = plotWidth(width, labelW);
   const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol, tWindow);
@@ -166,7 +173,7 @@ function printLineCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow 
   const range = maxV - minV;
   // Auto: ~2 rows/semitone for smoothness. Fixed: ~1 row/semitone, but always
   // capped to the terminal height so the frame fits and stays a constant size.
-  const maxRowsForTerm = Math.max(8, (process.stdout.rows || 40) - 14);
+  const maxRowsForTerm = Math.max(8, (process.stdout.rows || 40) - (reserveBottom ?? 14));
   const rows = Math.min(
     maxRowsForTerm,
     Math.max(8, Math.round(range * (fixedY ? 1 : 2)) + 1)
@@ -356,6 +363,78 @@ function printStats(voiced, tol, color) {
       : Number(pct) >= 50 ? ['Some pitch drift', C.cyan]
         : ['Often off pitch', C.red];
   console.log('  Verdict                : ' + colorize(verdict[0], verdict[1], color));
+}
+
+// Write `text` into a char array starting at `col`, clamped to the row width.
+// With overwrite:false, skips placement if any target cell is already used
+// (keeps note labels from garbling each other on narrow terminals).
+function placeText(arr, col, text, overwrite = true) {
+  let start = col;
+  if (start + text.length > arr.length) start = arr.length - text.length;
+  if (start < 0) start = 0;
+  if (!overwrite) {
+    for (let i = 0; i < text.length; i++) if (arr[start + i] !== ' ') return false;
+  }
+  for (let i = 0; i < text.length; i++) arr[start + i] = text[i];
+  return true;
+}
+
+// One-octave (0..1200¢) horizontal ruler marking where the current note sits,
+// reproducing the equal-tempered cents axis (C C# D … C). "Current" is the most
+// recent voiced frame (last element of `voiced`). Always prints a constant 5
+// lines so the live frame height never jumps (marker line blank when silent).
+function printCentsRuler(voiced, { color, tol, width }) {
+  const termW = process.stdout.columns || 100;
+  const rulerW = Math.max(24, Math.min(width ?? termW - 2, 120));
+  const colOf = (cents) => Math.round((cents / 1200) * (rulerW - 1));
+
+  const current = voiced.length ? voiced[voiced.length - 1] : null;
+
+  // Header readout: note + signed cent deviation (colored) + frequency.
+  let header;
+  if (current) {
+    const rounded = Math.round(current.cents); // String(-0) === "0", so no "-0¢"
+    const sign = rounded > 0 ? '+' : '';
+    const dev = colorize(`${sign}${rounded}¢`, COLOR[tuneClass(current.cents, tol)], color);
+    header = `Now: ${current.note}  ${dev}   (${current.hz.toFixed(1)} Hz)`;
+  } else {
+    header = colorize('Now: —  (waiting for sound…)', C.dim, color);
+  }
+
+  // Number axis: 0/300/600/900 on their ticks, 1200 right-aligned, unit appended.
+  const numbers = new Array(rulerW).fill(' ');
+  for (const v of [0, 300, 600, 900, 1200]) {
+    const label = String(v);
+    const c = colOf(v);
+    const start = v === 0 ? 0 : v === 1200 ? rulerW - label.length : c - (label.length >> 1);
+    placeText(numbers, start, label);
+  }
+
+  // Tick line: ─ baseline with ┼ at every 100¢ and ├ / ┤ at the ends.
+  const ticks = new Array(rulerW).fill('─');
+  for (let v = 0; v <= 1200; v += 100) ticks[colOf(v)] = '┼';
+  ticks[0] = '├';
+  ticks[rulerW - 1] = '┤';
+
+  // Note names at each 100¢ tick: C C# D … B C (skip on collision when narrow).
+  const notes = new Array(rulerW).fill(' ');
+  for (let k = 0; k <= 12; k++) {
+    const name = k < 12 ? NOTE_NAMES[k] : 'C';
+    placeText(notes, colOf(k * 100), name, false);
+  }
+
+  // Marker line: ▲ at the current note's position within the octave.
+  const marker = new Array(rulerW).fill(' ');
+  if (current) {
+    const pcCents = (((current.midi % 12) + 12) % 12) * 100; // 0..1200
+    marker[colOf(pcCents)] = colorize('▲', COLOR[tuneClass(current.cents, tol)], color);
+  }
+
+  console.log('\n' + header);
+  console.log(colorize(numbers.join('') + ' ¢', C.dim, color));
+  console.log(colorize(ticks.join(''), C.dim, color));
+  console.log(colorize(notes.join(''), C.dim, color));
+  console.log(marker.join(''));
 }
 
 function printNoteTable(voiced, color) {

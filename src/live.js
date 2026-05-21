@@ -115,6 +115,7 @@ export function live(opts = {}) {
         tMin: 0,
         tMax: windowSec,
         showTable: false,
+        showCentsRuler: true,
       });
     };
 
