@@ -64,9 +64,11 @@ export function renderChart(track, opts = {}) {
     return;
   }
 
-  // Reserve more bottom rows when the cents ruler is shown so the live frame
-  // still fits the terminal without scrolling.
-  const reserveBottom = showCentsRuler ? 20 : 14;
+  // Reserve enough non-chart rows so the whole live frame fits the terminal
+  // height without scrolling. The ruler view prints ~23 fixed lines (headers,
+  // axis, legend, stats, cents ruler), so cap the chart to leave room for them
+  // plus a small safety margin.
+  const reserveBottom = showCentsRuler ? 25 : 14;
   const curveOpts = { tol, color, width: opts.width, yMin, yMax, tWindow, reserveBottom };
   if (chart === 'dots') {
     printCurve(voiced, track, curveOpts);

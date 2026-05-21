@@ -74,9 +74,13 @@ export function live(opts = {}) {
       total += chunk.length >> 2;
       tail = tail.length ? Buffer.concat([tail, chunk]) : chunk;
     });
-    ff.on('error', reject);
+    // Route spawn errors through finish() so the alt screen / cursor are
+    // always restored (finish is defined below; the arrow defers the lookup).
+    ff.on('error', (err) => finish(err));
 
-    process.stdout.write('\x1b[?25l'); // hide cursor
+    // Enter the alternate screen buffer (no scrollback) + hide cursor, so
+    // redraws never accumulate history — the scrollbar can't keep growing.
+    process.stdout.write('\x1b[?1049h\x1b[?25l');
 
     const draw = () => {
       // 1) Analyze only the new samples, hop-aligned to absolute positions, and
@@ -132,7 +136,8 @@ export function live(opts = {}) {
       } catch {
         // already gone
       }
-      process.stdout.write('\x1b[?25h\n'); // restore cursor
+      // Show cursor + leave the alternate screen buffer (restores prior view).
+      process.stdout.write('\x1b[?25h\x1b[?1049l');
       if (err) reject(err);
       else resolve();
     };
