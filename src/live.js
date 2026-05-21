@@ -11,6 +11,7 @@ import {
   ANALYZE_SAMPLE_RATE,
   DEFAULT_A4,
   DEFAULT_TOLERANCE,
+  FRAME_SIZE,
   HOP_SIZE,
   LIVE_Y_MIN_NOTE,
   LIVE_Y_MAX_NOTE,
@@ -38,8 +39,13 @@ export function live(opts = {}) {
   // YIN tuning (threshold/rms/min-hz/max-hz) plus the live hop.
   const detect = { hopSize, ...detectOptions(opts) };
 
-  const maxBytes = Math.floor(windowSec * ANALYZE_SAMPLE_RATE) * 4;
-  let pcm = Buffer.alloc(0);
+  // Incremental analysis with a committed history keeps past pitches fixed:
+  // each instant is analyzed exactly once (hop-aligned to absolute samples)
+  // and stored, so prior columns never get recomputed (no vertical jitter).
+  let tail = Buffer.alloc(0); // unanalyzed samples; tail[0] == abs index tailStart
+  let tailStart = 0; // absolute sample index of tail[0]
+  let total = 0; // total samples received (now = total / sampleRate)
+  const history = []; // [{ t (abs sec), hz }] — committed, never recomputed
 
   const args = [
     '-hide_banner',
@@ -63,26 +69,43 @@ export function live(opts = {}) {
     let stderr = '';
     ff.stderr.on('data', (c) => (stderr += c));
 
-    // Keep only the most recent `windowSec` of audio.
+    // Append incoming audio; never trim raw PCM here (analysis is incremental).
     ff.stdout.on('data', (chunk) => {
-      pcm = pcm.length ? Buffer.concat([pcm, chunk]) : chunk;
-      if (pcm.length > maxBytes) pcm = pcm.subarray(pcm.length - maxBytes);
+      total += chunk.length >> 2;
+      tail = tail.length ? Buffer.concat([tail, chunk]) : chunk;
     });
     ff.on('error', reject);
 
     process.stdout.write('\x1b[?25l'); // hide cursor
 
     const draw = () => {
-      const n = pcm.length >> 2; // 4 bytes per float32
-      const samples = new Float32Array(n);
-      for (let i = 0; i < n; i++) samples[i] = pcm.readFloatLE(i << 2);
-      const track = analyzePitchTrack(samples, ANALYZE_SAMPLE_RATE, detect);
+      // 1) Analyze only the new samples, hop-aligned to absolute positions, and
+      //    commit results to history (each instant analyzed exactly once).
+      const avail = tail.length >> 2;
+      if (avail >= FRAME_SIZE) {
+        const samples = new Float32Array(avail);
+        for (let i = 0; i < avail; i++) samples[i] = tail.readFloatLE(i << 2);
+        const local = analyzePitchTrack(samples, ANALYZE_SAMPLE_RATE, detect);
+        for (const f of local) history.push({ t: tailStart / ANALYZE_SAMPLE_RATE + f.t, hz: f.hz });
+        // Frames start at 0,hop,2hop…; dropping frames*hop leaves tail[0] at the
+        // next unanalyzed frame start (keeps the overlap tail for the next frame).
+        const drop = local.length * hopSize;
+        tail = tail.subarray(drop << 2);
+        tailStart += drop;
+      }
+
+      // 2) Trim committed history to the most recent `windowSec`, then shift to
+      //    relative time so the axis always reads 0..windowSec (newest at right).
+      const now = total / ANALYZE_SAMPLE_RATE;
+      const cutoff = now - windowSec; // absolute time of the left edge
+      while (history.length && history[0].t < cutoff) history.shift();
+      const view = history.map((f) => ({ t: f.t - cutoff, hz: f.hz }));
 
       process.stdout.write('\x1b[H\x1b[2J'); // cursor home + clear screen
       console.log('🎤 LIVE pitch monitor — sing / play into the mic   (Ctrl+C to stop)');
       console.log(`device: ${device}   window: ${windowSec}s`);
-      // Fixed Y axis + fixed X window + no per-note table -> constant frame.
-      renderChart(track, {
+      // Fixed Y axis + fixed X window -> stable height; committed hz -> no jitter.
+      renderChart(view, {
         a4,
         tolerance,
         color,
