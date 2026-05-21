@@ -9,6 +9,7 @@ const C = {
   green: '\x1b[32m',
   red: '\x1b[31m',
   cyan: '\x1b[36m',
+  gray: '\x1b[90m',
 };
 
 function colorize(s, code, enabled) {
@@ -29,16 +30,15 @@ function tuneClass(cents, tol) {
   return 'on';
 }
 
-const SYMBOL = { on: '●', sharp: '▲', flat: '▼' }; // ● ▲ ▼
-const COLOR = { on: C.green, sharp: C.red, flat: C.cyan };
-
-// Bridge up to this many consecutive empty columns in the line chart, so
-// brief detection dropouts in a sustained note don't break the line.
-const GAP_BRIDGE = 2;
+// 'gap' marks interpolated/held columns (no real pitch: silence or detect
+// failure); drawn gray so it's clearly distinct from measured pitch.
+const SYMBOL = { on: '●', sharp: '▲', flat: '▼', gap: '╌' };
+const COLOR = { on: C.green, sharp: C.red, flat: C.cyan, gap: C.gray };
 
 // track: [{ t, hz }].
-// opts: { a4, tolerance, color, width, chart, yMin, yMax (MIDI), showTable }.
+// opts: { a4, tolerance, color, width, chart, yMin, yMax (MIDI), tMin, tMax, showTable }.
 // Passing yMin+yMax fixes the Y axis (stable height, e.g. for live view).
+// Passing tMin+tMax fixes the X axis to that time window (e.g. live 0..10s).
 export function renderChart(track, opts = {}) {
   const a4 = opts.a4 ?? DEFAULT_A4;
   const tol = opts.tolerance ?? DEFAULT_TOLERANCE;
@@ -47,6 +47,8 @@ export function renderChart(track, opts = {}) {
   const showTable = opts.showTable ?? true;
   const yMin = opts.yMin ?? null;
   const yMax = opts.yMax ?? null;
+  const tWindow =
+    opts.tMin != null && opts.tMax != null ? { tMin: opts.tMin, tMax: opts.tMax } : null;
   const fixedY = yMin != null && yMax != null;
 
   const voiced = track
@@ -59,7 +61,7 @@ export function renderChart(track, opts = {}) {
     return;
   }
 
-  const curveOpts = { tol, color, width: opts.width, yMin, yMax };
+  const curveOpts = { tol, color, width: opts.width, yMin, yMax, tWindow };
   if (chart === 'dots') {
     printCurve(voiced, track, curveOpts);
   } else {
@@ -69,7 +71,7 @@ export function renderChart(track, opts = {}) {
   if (showTable && voiced.length > 0) printNoteTable(voiced, color);
 }
 
-function printCurve(voiced, track, { tol, color, width, yMin, yMax }) {
+function printCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow }) {
   const labelW = 4; // e.g. "A#4 "
   const plotW = plotWidth(width, labelW);
 
@@ -91,7 +93,7 @@ function printCurve(voiced, track, { tol, color, width, yMin, yMax }) {
     hi += 1;
   }
 
-  const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol);
+  const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol, tWindow);
 
   console.log(`\nPitch Curve  (time ${t0.toFixed(1)}s → ${tEnd.toFixed(1)}s, each column ≈ ${(span / plotW).toFixed(2)}s)`);
   console.log(colorize('Y = note, X = time ──▶', C.dim, color) + '\n');
@@ -129,10 +131,10 @@ function printCurve(voiced, track, { tol, color, width, yMin, yMax }) {
 }
 
 // Connected line chart (asciichart style) of the continuous pitch contour.
-function printLineCurve(voiced, track, { tol, color, width, yMin, yMax }) {
+function printLineCurve(voiced, track, { tol, color, width, yMin, yMax, tWindow }) {
   const labelW = 4; // e.g. "A#4"
   const plotW = plotWidth(width, labelW);
-  const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol);
+  const { colMidi, colClass, t0, tEnd, span } = buildColumns(voiced, track, plotW, tol, tWindow);
 
   // MIDI range: fixed when yMin/yMax given (stable height), else auto-fit.
   const fixedY = yMin != null && yMax != null;
@@ -179,34 +181,56 @@ function printLineCurve(voiced, track, { tol, color, width, yMin, yMax }) {
     grid[r][c] = colorize(ch, COLOR[cls], color);
   };
 
-  // Bridge short gaps (<= GAP_BRIDGE empty columns) by linear interpolation so
-  // brief dropouts don't break the line; longer gaps stay as real breaks.
+  // Fill every empty column so the line is continuous; filled columns are
+  // class 'gap' (gray) to flag "no real pitch" (silence / detect failure).
   const fillMidi = colMidi.slice();
   const fillClass = colClass.slice();
-  let prev = -1;
-  for (let c = 0; c < plotW; c++) {
-    if (colMidi[c] == null) continue;
-    const gap = c - prev;
-    if (prev >= 0 && gap > 1 && gap - 1 <= GAP_BRIDGE) {
-      const v0 = colMidi[prev];
-      const v1 = colMidi[c];
-      for (let k = prev + 1; k < c; k++) {
-        const m = v0 + ((v1 - v0) * (k - prev)) / gap;
-        fillMidi[k] = m;
-        fillClass[k] = tuneClass((m - Math.round(m)) * 100, tol);
-      }
+  const first = colMidi.findIndex((m) => m != null);
+  if (first === -1) {
+    // Whole window unvoiced: neutral flat line at the vertical center.
+    const mid = (minV + maxV) / 2;
+    for (let c = 0; c < plotW; c++) {
+      fillMidi[c] = mid;
+      fillClass[c] = 'gap';
     }
-    prev = c;
+  } else {
+    let last = plotW - 1;
+    while (colMidi[last] == null) last--;
+    // Interior gaps: linear interpolation between the two surrounding notes.
+    let prev = first;
+    for (let c = first + 1; c <= last; c++) {
+      if (colMidi[c] == null) continue;
+      const gap = c - prev;
+      if (gap > 1) {
+        const v0 = colMidi[prev];
+        const v1 = colMidi[c];
+        for (let k = prev + 1; k < c; k++) {
+          fillMidi[k] = v0 + ((v1 - v0) * (k - prev)) / gap;
+          fillClass[k] = 'gap';
+        }
+      }
+      prev = c;
+    }
+    // Leading / trailing gaps: hold the nearest real note (flat line).
+    for (let c = 0; c < first; c++) {
+      fillMidi[c] = colMidi[first];
+      fillClass[c] = 'gap';
+    }
+    for (let c = last + 1; c < plotW; c++) {
+      fillMidi[c] = colMidi[last];
+      fillClass[c] = 'gap';
+    }
   }
 
-  // Draw connectors between consecutive (bridged) voiced columns.
+  // Draw connectors between consecutive columns (now always continuous).
   for (let c = 0; c < plotW - 1; c++) {
     const v0 = fillMidi[c];
     const v1 = fillMidi[c + 1];
     if (v0 == null || v1 == null) continue;
     const y0 = rowOf(v0);
     const y1 = rowOf(v1);
-    const cls = fillClass[c];
+    // Gray when either endpoint is interpolated/held; else the real tune class.
+    const cls = fillClass[c] === 'gap' || fillClass[c + 1] === 'gap' ? 'gap' : fillClass[c];
     if (y0 === y1) {
       put(y0, c, '─', cls);
     } else {
@@ -246,7 +270,9 @@ function printLineCurve(voiced, track, { tol, color, width, yMin, yMax }) {
       '  ' +
       colorize(`─ sharp (>+${tol}¢)`, COLOR.sharp, color) +
       '  ' +
-      colorize(`─ flat (<-${tol}¢)`, COLOR.flat, color)
+      colorize(`─ flat (<-${tol}¢)`, COLOR.flat, color) +
+      '  ' +
+      colorize(`╌ no pitch / interpolated`, COLOR.gap, color)
   );
 }
 
@@ -258,9 +284,10 @@ function plotWidth(width, labelW) {
 
 // Bucket voiced frames into `plotW` time columns.
 // Returns { colMidi, colClass, t0, tEnd, span }; gaps are null.
-function buildColumns(voiced, track, plotW, tol) {
-  const t0 = track.length ? track[0].t : 0;
-  const tEnd = track.length ? track[track.length - 1].t : 0;
+// tWindow ({ tMin, tMax }) fixes the time axis instead of using the track span.
+function buildColumns(voiced, track, plotW, tol, tWindow) {
+  const t0 = tWindow ? tWindow.tMin : track.length ? track[0].t : 0;
+  const tEnd = tWindow ? tWindow.tMax : track.length ? track[track.length - 1].t : 0;
   const span = tEnd - t0 || 1;
 
   const buckets = Array.from({ length: plotW }, () => []);

@@ -47,6 +47,10 @@ export const MAX_HZ = 1100; // ~C#6
 export const LIVE_Y_MIN_NOTE = 'C3';
 export const LIVE_Y_MAX_NOTE = 'C6';
 
+// Live rolling window (seconds). Also fixes the X axis to 0..N so the time
+// scale stays constant frame-to-frame.
+export const LIVE_WINDOW_SEC = 10;
+
 // Default "in tune" tolerance in cents (±). Cent deviation is measured
 // against the nearest semitone, so it always falls in [-50, +50]; ~25 cents
 // is a reasonable line between "on pitch" and "noticeably sharp/flat".

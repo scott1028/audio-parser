@@ -34,8 +34,9 @@ node src/index.js live --device plughw:3,0 --tolerance 25
 
 也可用 npm scripts：`npm run devices` / `npm run record -- --duration 5` / `npm run live` 等。
 
-`live` 直接串流麥克風 PCM 並沿用 `analyze` 的音高偵測與繪圖（每 ~200ms 重畫最近 `--window` 秒，預設 6s）。
+`live` 直接串流麥克風 PCM 並沿用 `analyze` 的音高偵測與繪圖（每 ~200ms 重畫最近 `--window` 秒，預設 10s）。
 為避免畫面高度亂跳，`live` 預設用**固定 Y 軸 `C3–C6`** 並隱藏每音平均表；可用 `--min-note` / `--max-note`（音名或 Hz）調整範圍，例如 `--min-note A2 --max-note A5`。
+**橫軸也固定為最近 `--window` 秒（0→N）**，時間尺度不會隨資料伸縮。
 
 ### 情境：用手機/喇叭播放歌曲（best-effort 抓主旋律）
 
@@ -107,12 +108,14 @@ Cent Deviation Summary
 | `--a4` | A4 參考頻率 (Hz) | 440 |
 | `--tolerance` | 視為「準」的 cent 容許範圍 (±) | 25 |
 | `--chart` | 曲線樣式 `line`（折線）/ `dots`（散點） | line |
-| `--window` | （live）顯示最近幾秒 | 6 |
+| `--window` | （live）顯示最近幾秒（同時固定橫軸 0→N） | 10 |
 | `--min-note` / `--max-note` | 固定 Y 軸範圍（音名如 `C3` 或 Hz） | live 預設 C3–C6 |
 | `--threshold` | YIN 靈敏度（約 0.05–0.30，越大越敏感） | 0.12 |
 | `--rms` | 靜音門檻（越小越能收小聲） | 0.005 |
 | `--min-hz` / `--max-hz` | 合理基頻範圍，範圍外捨棄 | 65 / 1100 |
 | `--no-color` | 關閉終端顏色 | （預設彩色） |
 
-> 折線圖會自動「補洞」：偵測短暫掉幀（≤2 欄）時以內插連線，讓清唱的小斷點不破圖；較長的空缺仍保留為真實斷點。
+> 折線圖永遠是**一條連續線、不中斷**：音與音之間的空缺以內插連接，開頭/結尾無聲時平拉最近的音，整段無聲則在 Y 軸中央畫平線。
+> 凡是這類「補出來/沒真的抓到音高」的段落一律以**灰色 `╌`** 呈現，與真正量測到的綠/紅/青清楚區隔。
+> 注意 Y 軸是**音高**（最底為最低音界，非 0；0Hz 在對數刻度為 −∞）；若要看音量請用另一種圖。
 > 放寬 `--threshold` / `--rms` 可多抓小聲或雜訊輸入，但會增加八度誤判等雜訊；對**複音歌曲**仍無法穩定追音（見 `TROUBLESHOOTING.md`）。
